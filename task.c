@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>  // Include the sys/stat.h header
+#include <sys/stat.h>  
 #include <fcntl.h>
 #include <errno.h>
 
@@ -30,13 +30,11 @@ void snapshot(const char *dirname, const char *parent, FILE *output_file) {
             continue;
         }
 
-        // Write metadata to output file
         fprintf(output_file, "%s/%s\n", parent, entry->d_name);
         fprintf(output_file, "  Size: %lld bytes\n", (long long)statbuf.st_size);
         fprintf(output_file, "  Permissions: %o\n", statbuf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
         fprintf(output_file, "  Type: %s\n", (S_ISDIR(statbuf.st_mode)) ? "Directory" : "File");
 
-        // Recursively handle subdirectories
         if (S_ISDIR(statbuf.st_mode)) {
             snapshot(path, path, output_file);
         }
