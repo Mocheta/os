@@ -4,15 +4,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>  
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
 
-void snapshot(const char *dirname, const char *parent, FILE *output_file) {
+void snapshot(const char *dirname, const char *parent, int output_file) {
     DIR *dir;
     struct dirent *entry;
     struct stat statbuf;
     char path[1024];
+    char buffer[1024];
 
     if (!(dir = opendir(dirname))) {
         perror("opendir");
@@ -30,10 +31,14 @@ void snapshot(const char *dirname, const char *parent, FILE *output_file) {
             continue;
         }
 
-        fprintf(output_file, "%s/%s\n", parent, entry->d_name);
-        fprintf(output_file, "  Size: %lld bytes\n", (long long)statbuf.st_size);
-        fprintf(output_file, "  Permissions: %o\n", statbuf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
-        fprintf(output_file, "  Type: %s\n", (S_ISDIR(statbuf.st_mode)) ? "Directory" : "File");
+        sprintf(buffer, "%s/%s\n", parent, entry->d_name);
+        write(output_file, buffer, strlen(buffer));
+        sprintf(buffer, "  Size: %lld bytes\n", (long long)statbuf.st_size);
+        write(output_file, buffer, strlen(buffer));
+        sprintf(buffer, "  Permissions: %o\n", statbuf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
+        write(output_file, buffer, strlen(buffer));
+        sprintf(buffer, "  Type: %s\n", (S_ISDIR(statbuf.st_mode)) ? "Directory" : "File");
+        write(output_file, buffer, strlen(buffer));
 
         if (S_ISDIR(statbuf.st_mode)) {
             snapshot(path, path, output_file);
@@ -43,16 +48,19 @@ void snapshot(const char *dirname, const char *parent, FILE *output_file) {
     closedir(dir);
 }
 
-int main(void) {
-    FILE *output_file = fopen("metadata.txt", "w");
-    if (output_file == NULL) {
+int main() {
+    int output_file = open("metadata.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644); 
+    if (output_file == -1) {
         perror("Error opening file");
         return 1;
     }
 
     snapshot(".", ".", output_file);
 
-    fclose(output_file);
+    if (close(output_file) == -1) { 
+        perror("Error closing file");
+        return 1;
+    }
 
     return 0;
 }
