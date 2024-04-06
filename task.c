@@ -8,6 +8,22 @@
 #include <fcntl.h>
 #include <errno.h>
 
+bool file_changed(const char *filepath) {
+    static struct stat last_stat;
+    struct stat current_stat;
+
+    if (stat(filepath, &current_stat) == -1) {
+        return true;
+    }
+
+    if (last_stat.st_dev != current_stat.st_dev || last_stat.st_ino != current_stat.st_ino ||
+        last_stat.st_mtime != current_stat.st_mtime || last_stat.st_size != current_stat.st_size) {
+        return true;
+    }
+
+    return false;
+}
+
 void snapshot(const char *dirname, const char *parent, int output_file) {
     DIR *dir;
     struct dirent *entry;
