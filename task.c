@@ -1,12 +1,16 @@
-#include <unistd.h>
-#include <sys/types.h>
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <time.h>
+#include <stdbool.h>
+#include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <bits/getopt_core.h>
+
+#define MAX_DIRS 10
+#define MAX_PATH_LEN 1024
 
 bool file_changed(const char *filepath) {
     static struct stat last_stat;
@@ -24,58 +28,89 @@ bool file_changed(const char *filepath) {
     return false;
 }
 
-void snapshot(const char *dirname, const char *parent, int output_file) {
-    DIR *dir;
+void take_snapshot(const char *dir, const char *output_dir) {
+    char snapshot_file[MAX_PATH_LEN];
     struct dirent *entry;
-    struct stat statbuf;
-    char path[1024];
-    char buffer[1024];
+    DIR *dir_ptr;
+    int output_fd;
 
-    if (!(dir = opendir(dirname))) {
+    dir_ptr = opendir(dir);
+    if (dir_ptr == NULL) {
         perror("opendir");
         return;
     }
 
-    while ((entry = readdir(dir)) != NULL) {
+    snprintf(snapshot_file, sizeof(snapshot_file), "%s/%s_snapshot.txt", output_dir, dir);
+
+    output_fd = open(snapshot_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (output_fd == -1) {
+        perror("Error opening snapshot file");
+        closedir(dir_ptr);
+        return;
+    }
+
+    dprintf(output_fd, "Snapshot for directory: %s\n", dir);
+    dprintf(output_fd, "Timestamp: %ld\n", (long)time(NULL));
+
+    while ((entry = readdir(dir_ptr)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        snprintf(path, sizeof(path), "%s/%s", dirname, entry->d_name);
+        char filepath[MAX_PATH_LEN];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir, entry->d_name);
 
-        if (lstat(path, &statbuf) < 0) {
-            perror("lstat");
-            continue;
-        }
+        if (file_changed(filepath)) {
+            struct stat file_stat;
+            if (stat(filepath, &file_stat) == -1) {
+                perror("stat");
+                continue;
+            }
 
-        sprintf(buffer, "%s/%s\n", parent, entry->d_name);
-        write(output_file, buffer, strlen(buffer));
-        sprintf(buffer, "  Size: %lld bytes\n", (long long)statbuf.st_size);
-        write(output_file, buffer, strlen(buffer));
-        sprintf(buffer, "  Permissions: %o\n", statbuf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
-        write(output_file, buffer, strlen(buffer));
-        sprintf(buffer, "  Type: %s\n", (S_ISDIR(statbuf.st_mode)) ? "Directory" : "File");
-        write(output_file, buffer, strlen(buffer));
-
-        if (S_ISDIR(statbuf.st_mode)) {
-            snapshot(path, path, output_file);
+            dprintf(output_fd, "\n// Old snapshot file for: %s\n", entry->d_name);
+            dprintf(output_fd, "Timestamp: %ld\n", (long)time(NULL));
+            dprintf(output_fd, "Entry: %s\n", entry->d_name);
+            dprintf(output_fd, "Size: %lld bytes\n", (long long)file_stat.st_size);
+            dprintf(output_fd, "Last Modified: %s", ctime(&file_stat.st_mtime));
+            dprintf(output_fd, "Permissions: %o\n", file_stat.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
+            dprintf(output_fd, "Inode no: %ld\n", (long)file_stat.st_ino);
         }
     }
 
-    closedir(dir);
+    closedir(dir_ptr);
+    close(output_fd);
 }
 
-int main() {
-    int output_file = open("metadata.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644); 
-    if (output_file == -1) {
-        perror("Error opening file");
+int main(int argc, char *argv[]) {
+    if (argc < 3 || argc > MAX_DIRS + 2) {
+        fprintf(stderr, "Usage: %s [-o output_dir] dir1 dir2 ... dirN\n", argv[0]);
         return 1;
     }
 
-    snapshot(".", ".", output_file);
+    char *output_dir = ".";
+    int opt;
+    while ((opt = getopt(argc, argv, "o:")) != -1) {
+        switch (opt) {
+            case 'o':
+                output_dir = optarg;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s [-o output_dir] dir1 dir2 ... dirN\n", argv[0]);
+                return 1;
+        }
+    }
 
-    if (close(output_file) == -1) { 
-        perror("Error closing file");
+    struct stat output_stat;
+    if (stat(output_dir, &output_stat) == -1) {
+        perror("Output directory stat");
         return 1;
+    }
+    if (!S_ISDIR(output_stat.st_mode)) {
+        fprintf(stderr, "%s is not a directory.\n", output_dir);
+        return 1;
+    }
+
+    for (int i = optind; i < argc; ++i) {
+        take_snapshot(argv[i], output_dir);
     }
 
     return 0;
