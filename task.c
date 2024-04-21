@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <bits/getopt_core.h>
+#include <sys/wait.h>
 
 #define MAX_DIRS 10
 #define MAX_PATH_LEN 1024
@@ -110,7 +111,20 @@ int main(int argc, char *argv[]) {
     }
 
     for (int i = optind; i < argc; ++i) {
-        take_snapshot(argv[i], output_dir);
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("fork");
+            return 1;
+        } else if (pid == 0) { 
+            take_snapshot(argv[i], output_dir);
+            return 0;
+        }
+    }
+
+    int status;
+    pid_t child_pid;
+    while ((child_pid = wait(&status)) != -1) {
+        printf("The process with Pid %d has ended with code %d\n", child_pid, WEXITSTATUS(status));
     }
 
     return 0;
